@@ -7,7 +7,7 @@
 #-------------------------------------------
 
 #----------Variables-------------
-$groupID = "34c81251-aa0c-41a5-880d-6bb70be5a1fa" # Object ID of Group to parse. 
+$groupID = "group Object ID" # Object ID of Group to parse. 
 $outputFolder = "C:\Temp\$($groupID)" # Output folder for the .csv files
 #-------------------------------------------
 
