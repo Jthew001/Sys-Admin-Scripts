@@ -3,7 +3,7 @@
 # Also requires CSV output locations, see vars below.
 
 #----------Variables-------------
-$groupID = "34c81251-aa0c-41a5-880d-6bb70be5a1fa" # Object ID of Group to parse. 
+$groupID = "Object ID of group" # Object ID of Group to parse. 
 $outputFolder = "C:\Temp\$($groupID)" # Output folder for the .csv files
 $DaysInactive = 180
 $accountEnabledStatus = $false # ($true = Get active accnts, $false = Get disabled accnts) Set the device filter to include or exclude accounts based on status.  
