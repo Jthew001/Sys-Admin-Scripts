@@ -2,12 +2,19 @@
 # Requires a CSV file with a single column of device names to parse, THE FIRST CEll of each Column being the header ('Name' in this case). Update filepath var with path to file. 
 
 #-------------------------------------------
-# Variable Delacation (Non-Static Variables)
+#            Variable Delacation 
 #-------------------------------------------
 
 #----------Import File Location-------------
-$filePath = "C:\Temp\devices.csv" # Filepath for csv with info. 
-#-------------------------------------------
+$filePath = "C:\Temp\AllAzureDevices.csv" # Filepath for csv with info. 
+$accountEnabledStatus = $false # ($true = Get active accnts, $false = Get disabled accnts) Set the device filter to include or exclude accounts based on status.
+$header = "displayName" # Update this var with the name of the column header on your CSV file. The file MUST have a column header.  
+$DaysInactive = 180
+#------------------------------------------
+
+#--------Static Variables------------------
+$time = (Get-Date).Adddays(-($DaysInactive))
+#----------------------------------------
 
 #-----------Arrays--------------------------
 $Names = @() # Array to write device names found in CSV file. 
@@ -18,6 +25,7 @@ $fineDevice = @() #Array to write devices that are active.
 $notFound = @() # Array to write devices that are not found in Azure.
 $nullUser = @() # Array to write devices who have users that are null. 
 $duplicateDevice = @()
+$staleDevices = @()
 #-------------------------------------------
 
 #----------Counters-------------------------
@@ -27,10 +35,7 @@ $nullUserCount = 0 # Holds count of devices with null users.
 $duplicateDeviceCount = 0
 $issueUserCount = 0 # Var to hold count for users/devices that disabled.
 $issueDeviceCount = 0
-#-------------------------------------------
-
-#---------Boolean Vars----------------------
-$accountEnabledStatus = $false # ($true = Get active accnts, $false = Get disabled accnts) Set the device filter to include or exclude accounts based on status.  
+$staleCount = 0
 #-------------------------------------------
 
 # Connect to Azure AD
@@ -38,7 +43,7 @@ Connect-AzureAD
 
 # Get list of device names from specified CSV file. 
 $devices = Import-Csv -Path $filePath | ForEach-Object { # Parses file and grabs each device in the 'Name' column of the .csv file. 
-    $Names += $_.Name # Get each value under 'Name' column on .csv and writes value of the cell to the array, runs until all devices of file have been parsed. 
+    $Names += $_.$header # Get each value under 'Name' column on .csv and writes value of the cell to the array, runs until all devices of file have been parsed. 
 
 }
 
@@ -67,6 +72,11 @@ Foreach ($device in $Names) {
         Continue
         }
 
+        If ($deviceObj.ApproximateLastLogonTimeStamp -le $time -or $deviceObj.ApproximateLastLogonTimeStamp -eq $null){
+            Write-Host "Device: $($device) -- Approx Last Logon: $($deviceObj.ApproximateLastLogonTimeStamp)" -ForegroundColor DarkYellow
+            $staleCount++
+            $staleDevices += $device
+        }
 
         If ($user.DisplayName -eq $null){
             
@@ -133,4 +143,7 @@ Foreach ($device in $Names) {
    Write-Host "------------------------------------------------------------------"
    Write-Host "Duplicate Device Count: $($duplicateDeviceCount)"
    Write-Host "-------------------------------------------------------------------"
+   Write-Host "Stale Device Count: $($staleCount)"
+   Write-Host "-------------------------------------------------------------------"
+
    
