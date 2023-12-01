@@ -1,15 +1,22 @@
 ﻿# Gets a list of devices from a csv file and provides device and user info from Azure. 
-# Requires a CSV file with a single column of device names to parse, THE FIRST CEll of each Column being the header ('Name' in this case). Update filepath var with path to file. 
+# Requires a CSV file with a single column of device names to parse, THE FIRST CEll of each Column being the header ('Name' or 'Device' for example). Update filepath var with path to file. 
 # Also requires CSV output locations, see vars below.
 
 #-------------------------------------------
 # Variable Delacation (Non-Static Variables)
 #-------------------------------------------
 
-#----------Import File Location-------------
-$filePath = "C:\Temp\devices.csv" # Filepath for csv with info.
-$outputFolder = "C:\Temp\Device Analysis" # Output folder for .csv files
-#-------------------------------------------
+#-----Variables you MUST review & set-------
+$filePath = "C:\Temp\AllAzureDevices.csv" # Filepath for csv with Device List info.
+$outputFolder = "C:\Temp\All Azure Devices Analysis 2" # Output folder for .csv files
+$accountEnabledStatus = $false # ($true = Get active accnts, $false = Get disabled accnts) Set the device filter to include or exclude accounts based on status.
+$header = "displayName" # Update this var with the name of the column header on your CSV file. The file MUST have a column header.  
+$DaysInactive = 180
+#------------------------------------------
+
+#--------Static Variables------------------
+$time = (Get-Date).Adddays(-($DaysInactive))
+#----------------------------------------
 
 #-----------Arrays--------------------------
 $Names = @() # Array to write device names found in CSV file. 
@@ -20,6 +27,7 @@ $fineDevice = @() #Array to write devices that are active.
 $notFound = @() # Array to write devices that are not found in Azure.
 $nullUser = @() # Array to write devices who have users that are null. 
 $duplicateDevice = @()
+$staleDevices = @()
 #-------------------------------------------
 
 #----------Counters-------------------------
@@ -29,10 +37,7 @@ $nullUserCount = 0 # Holds count of devices with null users.
 $duplicateDeviceCount = 0
 $issueUserCount = 0 # Var to hold count for users/devices that disabled.
 $issueDeviceCount = 0
-#-------------------------------------------
-
-#---------Boolean Vars----------------------
-$accountEnabledStatus = $false # ($true = Get active accnts, $false = Get disabled accnts) Set the device filter to include or exclude accounts based on status.  
+$staleCount = 0
 #-------------------------------------------
 
 #----------Export Locations-----------------
@@ -43,6 +48,7 @@ $exportIssueUsers = "$($outputFolder)\DisabledUsers.csv"
 $exportIssueDevices = "$($outputFolder)\DisabledDevices.csv"
 $exportNullUserDevices = "$($outputFolder)\NullUserDevices.csv"
 $exportDuplicateDevices = "$($outputFolder)\DuplicateDevices.csv"
+$exportStaleDevices = "$($outputFolder)\StaleDevices$($DaysInactive)Inactive.csv"
 #----------------------------------------------------------------------------------------------------------
 
 
@@ -52,7 +58,7 @@ Connect-AzureAD
 
 # Get list of device names from specified CSV file. 
 $devices = Import-Csv -Path $filePath | ForEach-Object { # Parses file and grabs each device in the 'Name' column of the .csv file. 
-    $Names += $_.Name # Get each value under 'Name' column on .csv and writes value of the cell to the array, runs until all devices of file have been parsed. 
+    $Names += $_.$header # Get each value under 'Name' column on .csv and writes value of the cell to the array, runs until all devices of file have been parsed. 
 
 }
 
@@ -82,6 +88,11 @@ Foreach ($device in $Names) {
         Continue
         }
 
+        If ($device.ApproximateLastLogonTimeStamp -le $time -or $device.ApproximateLastLogonTimeStamp -eq $null){
+            #Write-Host "Device: $($device.DisplayName) -- Approx Last Logon: $($device.ApproximateLastLogonTimeStamp) match" -ForegroundColor DarkYellow
+            $staleCount++
+            $staleDevices += $device
+        }
 
         If ($user.DisplayName -eq $null){
            <# 
@@ -119,6 +130,11 @@ Foreach ($device in $Names) {
             $issueUsers += $user
             Continue
         }
+        Elseif ($device.ApproximateLastLogonTimeStamp -le $time -or $device.ApproximateLastLogonTimeStamp -eq $null){
+            #Write-Host "Device: $($device.DisplayName) -- Approx Last Logon: $($device.ApproximateLastLogonTimeStamp) match" -ForegroundColor DarkYellow
+            $staleCount++
+            $staleDevices += $device
+        }
         
         Else{
             <#
@@ -142,16 +158,16 @@ Foreach ($device in $Names) {
    }
 
    #----------------------------------------------------------------------------------------------------
-   Write-Host "Fine Count: $($fineCount)"
+   Write-Host "Active Count: $($fineCount)"
    #Write-Host $fine | ft
    $ObjUserArray = $fineUser | Select-Object @{Name='Name';Expression={$_}} # Convert string array into Object Array with object property 'Name'.
    $ObjDeviceArray = $fineDevice | Select-Object @{Name='Device';Expression={$_}} # Convert string array into Object Array with object property 'Device'.
-
-   $ObjUserArray | Export-Csv $exportPathFineUsers -NoTypeInformation # Export array info to csv file
+   
+   $ObjUserArray | Export-Csv $exportPathFineUsers -NoTypeInformation # Export array info to csv file.
    $ObjDeviceArray | Export-Csv $exportPathFineDevices -NoTypeInformation # Export array info to csv file. 
    #------------------------------------------------------------------------------------------------------
-   Write-Host "Issue User Count: $($issueUserCount)"
-   Write-Host "Issue Device Count: $($issueDeviceCount)"
+   Write-Host "Disabled User Count: $($issueUserCount)"
+   Write-Host "Disabled Device Count: $($issueDeviceCount)"
    $ObjDeviceIssueArray = $issueDevices | Select-Object @{Name='Device';Expression={$_}}
    $ObjUserIssuesArray = $issueUsers | Select-Object @{Name='Name';Expression={$_}}
 
@@ -170,4 +186,7 @@ Foreach ($device in $Names) {
    $ObjDuplicateDeviceArray = $duplicateDevice | Select-Object @{Name='Devices';Expression={$_}}
    $ObjDuplicateDeviceArray | Export-Csv $exportDuplicateDevices -NoTypeInformation # Export array info to csv file. 
    #------------------------------------------------------------------------------
+   Write-Host "Stale Device Count: $($staleCount)"
+   $ObjStaleDeviceArray = $staleDevices | Select-Object @{Name='Devices';Expression={$_}}
+   $ObjStaleDeviceArray | Export-CSV $exportStaleDevices -NoTypeInformation
    Write-Host "------------------------------------------------------------------"
