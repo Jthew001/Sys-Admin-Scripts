@@ -2,14 +2,16 @@
 # Requires a CSV file with a single column of device names to parse, THE FIRST CEll of each Column being the header ('Name' in this case). Update filepath var with path to file. 
 # Also requires CSV output locations, see vars below.
 
-#-------------------------------------------
-# Variable Delacation (Non-Static Variables)
+#----------Variables-------------
+$groupID = "34c81251-aa0c-41a5-880d-6bb70be5a1fa" # Object ID of Group to parse. 
+$outputFolder = "C:\Temp\$($groupID)" # Output folder for the .csv files
+$DaysInactive = 180
+$accountEnabledStatus = $false # ($true = Get active accnts, $false = Get disabled accnts) Set the device filter to include or exclude accounts based on status.  
 #-------------------------------------------
 
-#----------Variables-------------
-$groupID = "group Object ID" # Object ID of Group to parse. 
-$outputFolder = "C:\Temp\$($groupID)" # Output folder for the .csv files
-#-------------------------------------------
+#--------Static Variables------------------
+$time = (Get-Date).Adddays(-($DaysInactive))
+#----------------------------------------
 
 #-----------Arrays--------------------------
 $Names = @() # Array to write device names found in CSV file. 
@@ -20,6 +22,7 @@ $fineDevice = @() #Array to write devices that are active.
 $notFound = @() # Array to write devices that are not found in Azure.
 $nullUser = @() # Array to write devices who have users that are null. 
 $duplicateDevice = @()
+$staleDevices = @()
 #-------------------------------------------
 
 #----------Counters-------------------------
@@ -29,10 +32,7 @@ $nullUserCount = 0 # Holds count of devices with null users.
 $duplicateDeviceCount = 0
 $issueUserCount = 0 # Var to hold count for users/devices that disabled.
 $issueDeviceCount = 0
-#-------------------------------------------
-
-#---------Boolean Vars----------------------
-$accountEnabledStatus = $false # ($true = Get active accnts, $false = Get disabled accnts) Set the device filter to include or exclude accounts based on status.  
+$staleCount = 0
 #-------------------------------------------
 
 #----------Export Locations-----------------
@@ -43,6 +43,7 @@ $exportIssueUsers = "$($outputFolder)\DisabledUsers.csv"
 $exportIssueDevices = "$($outputFolder)\DisabledDevices.csv"
 $exportNullUserDevices = "$($outputFolder)\NullUserDevices.csv"
 $exportDuplicateDevices = "$($outputFolder)\DuplicateDevices.csv"
+$exportStaleDevices = "$($outputFolder)\StaleDevices$($DaysInactive)Inactive.csv"
 #----------------------------------------------------------------------------------------------------------
 
 
@@ -54,8 +55,6 @@ Connect-AzureAD
 $devices = Get-AzureADGroupMember -ObjectId $groupID -All $true
 
 Foreach ($device in $devices) {
-    #Write-Host $device
-    #$deviceObj = Get-AzureADDevice -Searchstring $device # Search for device in Azure by device name. 
     try{
         $user = Get-AzureADDeviceRegisteredUser -ObjectId $device.ObjectId # Get user associated with azure device. 
         }
@@ -78,6 +77,11 @@ Foreach ($device in $devices) {
         Continue
         }
 
+        If ($device.ApproximateLastLogonTimeStamp -le $time -or $device.ApproximateLastLogonTimeStamp -eq $null){
+            #Write-Host "Device: $($device.DisplayName) -- Approx Last Logon: $($device.ApproximateLastLogonTimeStamp) match" -ForegroundColor DarkYellow
+            $staleCount++
+            $staleDevices += $device.DisplayName
+        }
 
         If ($user.DisplayName -eq $null){
             
@@ -167,5 +171,9 @@ Foreach ($device in $devices) {
    Write-Host "Duplicate Device Count: $($duplicateDeviceCount)"
    $ObjDuplicateDeviceArray = $duplicateDevice | Select-Object @{Name='Devices';Expression={$_}}
    $ObjDuplicateDeviceArray | Export-Csv $exportDuplicateDevices -NoTypeInformation # Export array info to csv file. 
+   #------------------------------------------------------------------------------
+   Write-Host "Stale Device Count: $($staleCount)"
+   $ObjStaleDeviceArray = $staleDevices | Select-Object @{Name='Devices';Expression={$_}}
+   $ObjStaleDeviceArray | Export-CSV $exportStaleDevices -NoTypeInformation
    #------------------------------------------------------------------------------
    Write-Host "------------------------------------------------------------------"

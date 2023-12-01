@@ -6,8 +6,14 @@
 #-------------------------------------------
 
 #----------Variables-------------
-$groupID = "group object ID" # Object ID of Group to parse. 
+$groupID = "34c81251-aa0c-41a5-880d-6bb70be5a1fa" # Object ID of Group to parse. 
+$DaysInactive = 180
+$accountEnabledStatus = $false # ($true = Get active accnts, $false = Get disabled accnts) Set the device filter to include or exclude accounts based on status.  
 #-------------------------------------------
+
+#--------Static Variables------------------
+$time = (Get-Date).Adddays(-($DaysInactive))
+#----------------------------------------
 
 #-----------Arrays--------------------------
 $Names = @() # Array to write device names found in CSV file. 
@@ -18,6 +24,7 @@ $fineDevice = @() #Array to write devices that are active.
 $notFound = @() # Array to write devices that are not found in Azure.
 $nullUser = @() # Array to write devices who have users that are null. 
 $duplicateDevice = @()
+$staleDevices = @()
 #-------------------------------------------
 
 #----------Counters-------------------------
@@ -27,10 +34,7 @@ $nullUserCount = 0 # Holds count of devices with null users.
 $duplicateDeviceCount = 0
 $issueUserCount = 0 # Var to hold count for users/devices that disabled.
 $issueDeviceCount = 0
-#-------------------------------------------
-
-#---------Boolean Vars----------------------
-$accountEnabledStatus = $false # ($true = Get active accnts, $false = Get disabled accnts) Set the device filter to include or exclude accounts based on status.  
+$staleCount = 0
 #-------------------------------------------
 
 # Connect to Azure AD
@@ -40,8 +44,6 @@ Connect-AzureAD
 $devices = Get-AzureADGroupMember -ObjectId $groupID -All $true
 
 Foreach ($device in $devices) {
-    #Write-Host $device
-    #$deviceObj = Get-AzureADDevice -Searchstring $device # Search for device in Azure by device name. 
     try{
         $user = Get-AzureADDeviceRegisteredUser -ObjectId $device.ObjectId # Get user associated with azure device. 
         }
@@ -51,7 +53,7 @@ Foreach ($device in $devices) {
             Write-Host "Device: $($device.DisplayName) not found in Azure." -ForegroundColor Red
             Write-Host "------------------------------------------"
             $notFoundCount++
-            $notFound += $device
+            $notFound += $device.DisplayName
             Continue
         }
         #Write-Output "Ran into an issue: $PSItem"
@@ -60,10 +62,17 @@ Foreach ($device in $devices) {
         Write-Host "Device: $($device.DisplayName) duplicate found in Azure." -ForegroundColor Yellow
         Write-Host "------------------------------------------"
         $duplicateDeviceCount++
-        $duplicateDevice += $device # Logs any devices not found in Azure into $notFound array. 
+        $duplicateDevice += $device.DisplayName # Logs any devices not found in Azure into $notFound array. 
         Continue
         }
 
+        If ($device.ApproximateLastLogonTimeStamp -le $time -or $device.ApproximateLastLogonTimeStamp -eq $null){
+            Write-Host "------------------------------------------"
+            Write-Host "Device: $($device.DisplayName) -- Approx Last Logon: $($device.ApproximateLastLogonTimeStamp) match" -ForegroundColor DarkYellow
+            Write-Host "------------------------------------------"
+            $staleCount++
+            $staleDevices += $device.DisplayName
+        }
 
         If ($user.DisplayName -eq $null){
             
@@ -76,7 +85,7 @@ Foreach ($device in $devices) {
             
             $nullUserCount++
             #$nullUser += $user.DisplayName # Logs any devices not found in Azure into $notFound array. 
-            $nullUser += $device
+            $nullUser += $device.DisplayName
             Continue
         }
         ElseIf($device.AccountEnabled -eq $accountEnabledStatus){
@@ -87,7 +96,7 @@ Foreach ($device in $devices) {
             Write-Host "Device active?: $($device.AccountEnabled)" -ForegroundColor Magenta
             Write-Host "------------------------------------------"
             $issueDeviceCount++
-            $issueDevices += $device
+            $issueDevices += $device.DisplayName
             Continue
         }
         ElseIf($user.AccountEnabled -eq $accountEnabledStatus){
@@ -98,7 +107,7 @@ Foreach ($device in $devices) {
             Write-Host "Device active?: $($device.AccountEnabled)" -ForegroundColor DarkYellow
             Write-Host "------------------------------------------"
             $issueUserCount++
-            $issueUsers += $user.DirSyncEnabled
+            $issueUsers += $user.DisplayName
             Continue
         }
         
@@ -113,10 +122,11 @@ Foreach ($device in $devices) {
             
             $fineCount++
             $fineUser += $user.DisplayName
-            $fineDevice += $device
+            $fineDevice += $device.DisplayName
         }
         
    }
+
    Write-Host "------------------------------------------------------------------"
    Write-Host "Fine Count: $($fineCount)"
    Write-Host "------------------------------------------------------------------"
@@ -129,5 +139,7 @@ Foreach ($device in $devices) {
    Write-Host "Null user Count: $($nullUserCount)"
    Write-Host "------------------------------------------------------------------"
    Write-Host "Duplicate Device Count: $($duplicateDeviceCount)"
+   Write-Host "-------------------------------------------------------------------"
+   Write-Host "Stale Device Count: $($staleCount)"
    Write-Host "-------------------------------------------------------------------"
    
